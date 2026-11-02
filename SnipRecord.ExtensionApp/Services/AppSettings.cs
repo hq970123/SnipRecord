@@ -29,7 +29,7 @@ public sealed class AppSettings
     /// <summary>Folder for recordings (videos); null/empty = Videos\SnipRecord.</summary>
     public string? SaveFolder { get; set; }
 
-    /// <summary>Also record the microphone. TODO</summary>
+    /// <summary>Also record the microphone during window recording.</summary>
     public bool RecordMicrophone { get; set; }
 
     /// <summary>Folder for screenshots; null/empty = Pictures\Screenshots\SnipRecord.</summary>
@@ -43,6 +43,9 @@ public sealed class AppSettings
 
     /// <summary>Clipboard format of the color picker: "HEX" (#RRGGBB), "RGB" (rgb(r, g, b)) or "HSL" (hsl(h, s%, l%)).</summary>
     public string ColorFormat { get; set; } = ColorFormatHex;
+
+    /// <summary>Snipping Tool mode used by the taskbar screenshot button: Rectangle, Window or FreeForm.</summary>
+    public SnipMode DefaultSnipMode { get; set; } = SnipMode.Rectangle;
 
     public static AppSettings FromJson(string? json)
     {
@@ -84,6 +87,10 @@ public sealed class AppSettings
             ColorFormatHsl => ColorFormatHsl,
             _ => ColorFormatHex,
         };
+        if (DefaultSnipMode is not (SnipMode.Rectangle or SnipMode.Window or SnipMode.FreeForm))
+        {
+            DefaultSnipMode = SnipMode.Rectangle;
+        }
         if (string.IsNullOrWhiteSpace(SaveFolder)) SaveFolder = null;
         if (string.IsNullOrWhiteSpace(ImageSaveFolder)) ImageSaveFolder = null;
     }
