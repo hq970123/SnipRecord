@@ -194,3 +194,75 @@ replaced by `AppStub.cs`) against Microsoft.WindowsAppSDK 2.3.1 + WidBar.SDK 2.0
   recent colour swatches, 清空 links), `SettingsView` (default mode, delay, auto-save, image/video folders with
   Microsoft.Windows.Storage.Pickers.FolderPicker(windowId), colour format, mic, width), `UiHelpers`.
 - GitHub: repo hq970123/SnipRecord could not be created (see daily report); repo zipped to work/SnipRecord.zip.
+
+## Annotation editor (integration)
+Files (all new): `Views/Editor/AnnotationEditor.cs` (public API, window, toolbar, save/copy/close),
+`Views/Editor/AnnotationEditor.Input.cs` (pointer/keyboard/inline text/on-screen drawing), `Views/Editor/EditorUi.cs`
+(local UI helpers — no dependency on other view files), `Services/Editor/EditorModel.cs` (annotation records, document,
+undo/redo commands), `Services/Editor/AnnotationRenderer.cs` (Win2D drawing shared by screen + export, save, clipboard).
+
+**NuGet the integrator must add to SnipRecord.ExtensionApp.csproj:**
+```xml
+<PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+```
+1.4.0 (2026-03) is the first Win2D built on the split `Microsoft.WindowsAppSDK.WinUI` package (dependency ≥ 1.8.260204000);
+with WinAppSDK 2.3.1 NuGet resolves WinUI 2.3.0 (checked in project.assets.json). Native `Microsoft.Graphics.Canvas.dll`
+ships for win-x64/win-arm64 → flows into the self-contained publish/MSIX automatically. No manifest change needed.
+
+**API** (namespace `SnipRecord.ExtensionApp.Views.Editor`, call on the UI thread):
+```
+static Task<AnnotationEditor> AnnotationEditor.OpenAsync(string imagePath, AnnotationEditorOptions? options = null)
+    // loads the image first (throws FileNotFoundException / decoder exception), then opens + activates the window.
+    // Same path already open → that window is brought to front and returned.
+class AnnotationEditorOptions { EditorSaveMode DefaultSave = EditedCopy; bool AddToRecent = true; }
+enum EditorSaveMode { EditedCopy /* <name>_edited.png beside the original, " (2)" if taken */, Overwrite }
+AnnotationEditor: string ImagePath; string? SavedPath; bool IsDirty; Window Window;
+    Task<string?> Completion   // completes on close with the last saved path (null if never saved)
+    event EventHandler<string> Saved; event EventHandler Closed;
+    void Activate(); void Close(bool force = false)
+```
+`AddToRecent` → `RecentStore.Shared.AddCapture(path, false)` after each save (so don't add it again in the plugin).
+
+**UI hooks (suggested, not wired — files owned elsewhere):**
+1. FlyoutView recent-capture rows (images only): an "标注" icon button (glyph `\uE70F` Edit) →
+   `await AnnotationEditor.OpenAsync(item.Path)`; close the flyout first (FlyoutCloser) so the editor gets focus.
+2. SnipRecordPlugin.OnProtocolActivated: on `CaptureStatus.Saved && !IsVideo`, optionally open the editor (make it a
+   setting, e.g. `AppSettings.OpenEditorAfterSnip`, default off — Snipping Tool already shows its own markup UI).
+3. Wrap the call in try/catch and show `ex.Message` in the status line (unreadable / deleted file).
+
+**Behaviour:** tools 选择/移动(V) 画笔(P) 荧光笔(H) 箭头(A) 直线(L) 矩形(R) 椭圆(E) 文字(T) 马赛克(M) 序号标记(N) 裁剪(C);
+Shift = 45° lines / square / circle; 6 colours + custom (ColorPicker flyout); 细/中/粗 (1/2/3). Colour/width also restyle the
+selected object. Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) undo/redo (command stack: Add/Remove/Replace/Crop), Delete removes selection,
+double-click text (select tool) or click it (text tool) to re-edit; Enter commits text, Shift+Enter new line. Ctrl+C copies,
+Ctrl+S saves per `DefaultSave`, Ctrl+Shift+S 另存为 (FileSavePicker, PNG/JPEG/BMP), save SplitButton menu has all three;
+复制并关闭 copies and closes without prompting. Esc: cancel drag → clear selection → close (ContentDialog 保存/不保存/取消
+when dirty; title-bar close goes through the same prompt via AppWindow.Closing). Title shows ● when unsaved.
+Crop = drag a region, applied on release (undoable); export is the crop at original pixel resolution.
+
+**Design decisions:** Win2D over XAML shapes + RenderTargetBitmap — RTB renders at screen scale, needs the element live and
+on-screen, and has size limits, so a "original resolution" export would be resampled; with Win2D the exact same drawing code
+runs into a `CanvasRenderTarget` of crop size at 96 DPI (1 DIP = 1 px). Annotations are immutable records in original image
+pixels (Id-stable; edits = replace), so select/move/delete/restyle and undo are uniform. Mosaic = whole image downscaled by the
+block size (HighQualityCubic) and drawn back NearestNeighbor → cells aligned to the image grid, identical on screen and in export.
+Original pixels are kept in memory: device-lost rebuilds never re-read the file (which Overwrite may have replaced) and
+repeated overwrite-saves never double-bake annotations. Saves go through a temp file + File.Move(overwrite).
+Window: `new Window()` in code, `MicaBackdrop` when `MicaController.IsSupported()` (else solid theme brush), client sized so
+the image shows 1:1 in physical pixels (DPI of the monitor under the cursor via GetDpiForMonitor) plus toolbar, capped at 80% of
+that monitor's work area (min 820×420 DIP); the view re-fits on resize/DPI change (XamlRoot.Changed).
+
+**Compile check:** `work/sr-check-editor/check.csproj` (same shape as the old sr-check-ui: all ExtensionApp .cs except
+App.xaml.cs + AppStub.cs, WinAppSDK 2.3.1, WidBar.SDK 2.0.5, Vortice 3.8.3, **+ Win2D 1.4.0**, win-x64) → C# 0 errors,
+0 warnings; only the MakePri.exe step fails on Linux (expected). Not run on Windows.
+
+**Risks / verify on device:**
+- Own top-level Window in the widget process: WidBar.SDK itself creates `Microsoft.UI.Xaml.Window`s in this process
+  (FlyoutHostWindow, SettingsHostWindow, StandaloneInfoWindow), so it is supported. The SDK never touches
+  `Application.DispatcherShutdownMode` (default OnLastWindowClose): if the editor is ever the only open window when it closes,
+  the process could exit — if that shows up, set `DispatcherShutdownMode = OnExplicitShutdown` in App's ctor.
+- Foreground: opening from a protocol activation (no recent user input in our process) may leave the window behind others;
+  `Activate()` + `SetForegroundWindow` is tried; from a flyout click it gets focus normally.
+- Win2D 1.4.0 + WinAppSDK 2.x runtime pairing compiles but has not been run; fallback if it fails at runtime is an
+  XAML-shapes renderer (model/commands are renderer-independent).
+- Inline TextBox ↔ rendered text alignment is approximate (TextBox padding 0, border 1); font is Microsoft YaHei UI.
+- Very large images (> device max bitmap size, usually 16384 px) fail to load → OpenAsync throws.
+- Clipboard holds an in-memory PNG stream; `Clipboard.Flush()` keeps it after the editor closes.
