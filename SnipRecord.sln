@@ -1,0 +1,41 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SnipRecord.ExtensionApp", "SnipRecord.ExtensionApp\SnipRecord.ExtensionApp.csproj", "{4EF42E08-D579-4DD8-A7A1-92F5B55EF934}"
+EndProject
+Project("{C7167F0D-BC9F-4E6E-AFE1-012C56B48DB5}") = "SnipRecord (Package)", "SnipRecord (Package)\SnipRecord (Package).wapproj", "{12386AF8-2918-404F-B104-FA02D8A9D79D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|ARM64 = Debug|ARM64
+		Debug|x64 = Debug|x64
+		Release|ARM64 = Release|ARM64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4EF42E08-D579-4DD8-A7A1-92F5B55EF934}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{4EF42E08-D579-4DD8-A7A1-92F5B55EF934}.Debug|ARM64.Build.0 = Debug|ARM64
+		{4EF42E08-D579-4DD8-A7A1-92F5B55EF934}.Debug|x64.ActiveCfg = Debug|x64
+		{4EF42E08-D579-4DD8-A7A1-92F5B55EF934}.Debug|x64.Build.0 = Debug|x64
+		{4EF42E08-D579-4DD8-A7A1-92F5B55EF934}.Release|ARM64.ActiveCfg = Release|ARM64
+		{4EF42E08-D579-4DD8-A7A1-92F5B55EF934}.Release|ARM64.Build.0 = Release|ARM64
+		{4EF42E08-D579-4DD8-A7A1-92F5B55EF934}.Release|x64.ActiveCfg = Release|x64
+		{4EF42E08-D579-4DD8-A7A1-92F5B55EF934}.Release|x64.Build.0 = Release|x64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Debug|ARM64.Build.0 = Debug|ARM64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Debug|ARM64.Deploy.0 = Debug|ARM64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Debug|x64.ActiveCfg = Debug|x64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Debug|x64.Build.0 = Debug|x64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Debug|x64.Deploy.0 = Debug|x64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Release|ARM64.ActiveCfg = Release|ARM64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Release|ARM64.Build.0 = Release|ARM64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Release|ARM64.Deploy.0 = Release|ARM64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Release|x64.ActiveCfg = Release|x64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Release|x64.Build.0 = Release|x64
+		{12386AF8-2918-404F-B104-FA02D8A9D79D}.Release|x64.Deploy.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
