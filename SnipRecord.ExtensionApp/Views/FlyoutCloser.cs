@@ -75,7 +75,11 @@ internal static class FlyoutCloser
         {
             targets = windows.Where(w => isOpen?.GetValue(w) is not false).ToList();
         }
-        foreach (var w in targets) dismiss.Invoke(w, null);
+        foreach (var w in targets)
+        {
+            if (isOpen?.GetValue(w) is false) continue; // already closed: nothing to do
+            dismiss.Invoke(w, null);
+        }
         return targets.Count > 0;
     }
 

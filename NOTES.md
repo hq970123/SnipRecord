@@ -171,3 +171,26 @@ Risks / to verify on device:
   the audio queue just grows in memory.
 - Picker/Esc: SetForegroundWindow may be refused, so Esc is polled with GetAsyncKeyState (the key still reaches the
   foreground app).
+
+## UI + wiring (step 3)
+Compile-checked on Linux: `work/sr-check-ui/check.csproj` compiles **all** ExtensionApp .cs files (except App.xaml.cs,
+replaced by `AppStub.cs`) against Microsoft.WindowsAppSDK 2.3.1 + WidBar.SDK 2.0.5 + Vortice → C# 0 errors / 0 warnings
+(only the later MakePri.exe step fails on Linux). SDK streamed into /tmp/dotnet (not persistent; /tmp gets wiped).
+- `SnipRecordPlugin` is the controller (IWidgetFlyoutLifecycle too): `SnipAsync(SnipMode?)`, `RecordRectangleAsync()`
+  (Snipping Tool video), `RecordWindowAsync()` (WindowRecorder.StartWindowPickAsync; toggles stop if recording),
+  `StopRecordingAsync()`, `PickColorAsync()` (PickAsync(200)), `SetRecordMicrophone`, `CopyColor(hex)`; state
+  `IsWindowRecording/RecordingElapsed/RecorderWarning/StatusMessage/StatusIsError`; 500 ms DispatcherTimer while recording.
+  Uses `RecentStore.Shared`; `SaveShared()` on init + every draft; RecentStore.Changed / DiscoverCompleted marshalled to UI;
+  protocol activations → `CaptureResponseHandler.HandleAsync(uri,_settings,_recent)`, Failed → status line. DiscoverAsync at
+  init when capabilities are missing or > 1 day old.
+- Flyout microphone toggle can only persist to shared settings.json (no WidBar settings context in the flyout), so at init
+  `RecordMicrophone` is taken from settings.json when that file exists.
+- `AppSettings.DefaultSnipMode` (SnipMode, Rectangle/Window/FreeForm; normalized).
+- `Views/FlyoutCloser`: WidBar.SDK 2.0.5 has no public close API → reflection on internal
+  `WidBar.SDK.Hosting.FlyoutHostWindow` (static `Instances`, `_pluginContent`, `IsOpen`, public `Dismiss()`); fallback hides
+  the AppWindow from `XamlRoot.ContentIslandEnvironment.AppWindowId`. Called before snip / record / pick.
+- Views: `PreviewView` (3 icon buttons E722/E714/EF3C, record MenuFlyout 矩形/窗口, red stop+timer while window recording),
+  `FlyoutView` (tiles, `Segmented` mode rows, mic toggle, warning box, status, recent 8 captures with thumbnail/copy/reveal,
+  recent colour swatches, 清空 links), `SettingsView` (default mode, delay, auto-save, image/video folders with
+  Microsoft.Windows.Storage.Pickers.FolderPicker(windowId), colour format, mic, width), `UiHelpers`.
+- GitHub: repo hq970123/SnipRecord could not be created (see daily report); repo zipped to work/SnipRecord.zip.
