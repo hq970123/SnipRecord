@@ -266,3 +266,36 @@ App.xaml.cs + AppStub.cs, WinAppSDK 2.3.1, WidBar.SDK 2.0.5, Vortice 3.8.3, **+ 
 - Inline TextBox ↔ rendered text alignment is approximate (TextBox padding 0, border 1); font is Microsoft YaHei UI.
 - Very large images (> device max bitmap size, usually 16384 px) fail to load → OpenAsync throws.
 - Clipboard holds an in-memory PNG stream; `Clipboard.Flush()` keeps it after the editor closes.
+
+## FullScreen / Hotkeys / GIF API
+Compile-checked with `work/sr-check-editor/check.csproj` (all ExtensionApp .cs, .NET SDK 10.0): C# 0 errors / 0 warnings
+(only MakePri fails on Linux). Not run on Windows. **Not wired into the plugin/views yet.**
+
+**FullScreen** (`Services.FullScreen`): `enum FullScreenTarget {CurrentMonitor, AllMonitors}`;
+`static Task<string?> FullScreenCapture.CaptureAsync(target, AppSettings?, RecentStore?, bool flash = true, CancellationToken = default)`
+→ PNG path or null; `LastError` (Chinese, set when null) / `LastWarning` (folder fallback, clipboard failure); `IsCapturing`; never throws;
+second concurrent call returns null ("正在截图"). Waits `DelaySeconds`; BitBlt SRCCOPY|CAPTUREBLT on a PMv2 thread (monitor under cursor or
+virtual screen); PNG via BitmapEncoder; `<image folder>\全屏_yyyyMMdd_HHmmss[_n].png` (fallback Pictures\Screenshots\SnipRecord);
+clipboard CF_DIB + "PNG" on an STA thread; `(recent ?? RecentStore.Shared).AddCapture(path,false)`; white fade window with WDA_EXCLUDEFROMCAPTURE.
+Close the flyout before calling (it would be in the shot).
+
+**Hotkeys** (`Services.Hotkeys`): `[Flags] HotkeyModifiers {None, Alt=1, Ctrl=2, Shift=4, Win=8}` (= MOD_*);
+`readonly record struct Hotkey(Modifiers, VirtualKey)`: `None`, `IsEmpty`, `IsValid` (Ctrl/Alt/Win, or F1–F24), `ToString()` "Ctrl+Alt+A"/"",
+`ToDisplayString()` (未设置), `static TryParse`, `KeyName(vk)`. `enum HotkeyAction {Snip, FullScreen, RecordRectangle, RecordWindow, ColorPick, OpenEditorOnLastCapture}`.
+`HotkeyBindings`: indexer, `Defaults` (Ctrl+Alt+A/F/R/V/C, editor none), `GetDefault`, `AllActions`, `Clone`, `FromSettingsMap(IReadOnlyDictionary<string,string>?)`
+(key = action name; missing → default, "" → disabled), `ToSettingsMap()`, `FindConflicts()` → `HotkeyConflict(Hotkey, Actions)`, `static GetDisplayName(action)` (中文).
+`GlobalHotkeyService.Shared`: `Start()` (UI thread; captures SynchronizationContext), `Task<IReadOnlyDictionary<HotkeyAction,HotkeyRegistration>> RegisterAsync(bindings)`,
+`UnregisterAllAsync()`, `Registrations`, `event HotkeyPressed(object, HotkeyAction)`, `Suspend()/Resume()` (ref-counted; while suspended RegisterAsync only probes),
+`IsSuspended`, `Dispose()`. `HotkeyRegistration(Action, Hotkey, Status, ErrorCode)` + `StatusText`; `HotkeyRegistrationStatus {Registered, Disabled, InUse(1409 已被占用), Duplicate, Invalid, Failed}`.
+`HotkeyRecorderBox : TextBox`: `Hotkey` property, `event HotkeyChanged(object, Hotkey)`; Backspace/Delete clears, Esc reverts, suspends the service while focused.
+Settings persistence for bindings is not added to AppSettings yet (suggest `Dictionary<string,string>? Hotkeys`).
+
+**GIF** (`Services.Gif`): `GifOptions {Fps=10, MaxWidth=800, LoopForever=true, TrimStartSeconds?, TrimEndSeconds?, FallbackFolder?}`, `From(fps,maxWidth,folder)`,
+`SnapFps` (5/10/15/20), `ClampMaxWidth` (0 or 64–3840). `GifExportException`. `static Task<string> GifExporter.ExportAsync(mp4, GifOptions?, IProgress<double>?, CancellationToken)`
+→ `<mp4 folder>\<name>.gif` / `<name> (2).gif` (fallback folder if not writable); frames via MediaComposition.GetThumbnailsAsync (NearestFrame, batches of 8),
+WIC GIF encoder, per-frame `/grctlext/Delay` with accumulated rounding, NETSCAPE2.0 loop ext (ignored if rejected), max 12000 frames, `.part` temp deleted on failure.
+`GifRecordingFlow(Func<bool> enabled, Func<GifOptions> options, RecentStore? recent)` (construct on UI thread): `Attach/Detach(WindowRecorder)`,
+`HandleRecordingCompleted(mp4)` (if enabled: convert + delete mp4), `Task<GifConversionResult> ConvertAsync(mp4, options?, deleteMp4, progress, ct)` (serial, never throws),
+`Cancel(path?)`, `PendingCount/IsBusy`, events `ExportStarted(string)`, `ProgressChanged(GifProgress)`, `ExportCompleted/ExportFailed(GifConversionResult)` (cancel → Failed, Cancelled=true).
+Result: `GifConversionResult(Mp4Path, GifPath, Cancelled, Error, Mp4Deleted)`, `Succeeded`. Adds gif to RecentStore as image; removes the deleted mp4 entry.
+Risks: GetThumbnailsAsync speed on long clips (~seconds per 100 frames); GIF palette is WIC's default (dithering quality untested).
