@@ -133,7 +133,7 @@ public sealed class SnipRecordPlugin :
         return _flyout;
     }
 
-    public UIElement? CreateSettingsContent(IWidgetSettingsContext context) => new SettingsView(context);
+    public UIElement? CreateSettingsContent(IWidgetSettingsContext context) => new SettingsView(context, this);
 
     public override void OnSettingsDraftChanged(string settingsJson)
     {
