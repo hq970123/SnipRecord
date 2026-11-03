@@ -38,6 +38,13 @@ public sealed class GifRecordingFlow
     public int PendingCount { get { lock (_jobs) return _jobs.Count; } }
     public bool IsBusy => PendingCount > 0;
 
+    /// <summary>True while a conversion of <paramref name="mp4Path"/> is queued or running.</summary>
+    public bool IsPending(string mp4Path)
+    {
+        if (string.IsNullOrEmpty(mp4Path)) return false;
+        lock (_jobs) return _jobs.ContainsKey(mp4Path);
+    }
+
     public void Attach(WindowRecorder recorder) => recorder.Completed += OnRecorderCompleted;
     public void Detach(WindowRecorder recorder) => recorder.Completed -= OnRecorderCompleted;
 

@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using SnipRecord.ExtensionApp.Services.Gif;
+using SnipRecord.ExtensionApp.Services.Hotkeys;
 
 namespace SnipRecord.ExtensionApp.Services;
 
@@ -46,6 +48,39 @@ public sealed class AppSettings
 
     /// <summary>Snipping Tool mode used by the taskbar screenshot button: Rectangle, Window or FreeForm.</summary>
     public SnipMode DefaultSnipMode { get; set; } = SnipMode.Rectangle;
+
+    /// <summary>
+    /// Global hotkey bindings, key = <see cref="HotkeyAction"/> name, value = "Ctrl+Alt+A" ("" = disabled).
+    /// null = all defaults; a missing action also falls back to its default. Use <see cref="GetHotkeys"/> / <see cref="SetHotkeys"/>.
+    /// </summary>
+    public Dictionary<string, string>? Hotkeys { get; set; }
+
+    /// <summary>Register the global hotkeys at all.</summary>
+    public bool HotkeysEnabled { get; set; } = true;
+
+    /// <summary>Full-screen capture covers all monitors (virtual screen) instead of the monitor under the cursor.</summary>
+    public bool FullScreenAllMonitors { get; set; }
+
+    /// <summary>GIF frame rate: 5, 10, 15 or 20 (snapped by <see cref="GifOptions.SnapFps"/>).</summary>
+    public int GifFps { get; set; } = 10;
+
+    /// <summary>GIF max width in pixels; 0 = original size, else 64–3840 (<see cref="GifOptions.ClampMaxWidth"/>).</summary>
+    public int GifMaxWidth { get; set; } = 800;
+
+    /// <summary>Convert finished recordings (window + Snipping Tool) to GIF and delete the MP4.</summary>
+    public bool RecordAsGif { get; set; }
+
+    /// <summary>Open the annotation editor after a screenshot is saved (Snipping Tool or full screen).</summary>
+    public bool OpenEditorAfterCapture { get; set; }
+
+    /// <summary>Effective bindings (defaults merged in).</summary>
+    public HotkeyBindings GetHotkeys() => HotkeyBindings.FromSettingsMap(Hotkeys);
+
+    /// <summary>Store <paramref name="bindings"/>; null resets to defaults.</summary>
+    public void SetHotkeys(HotkeyBindings? bindings) => Hotkeys = bindings?.ToSettingsMap();
+
+    /// <summary>GIF options from the settings (fallback folder = screenshot folder).</summary>
+    public GifOptions GetGifOptions() => GifOptions.From(GifFps, GifMaxWidth, GetImageFolder());
 
     public static AppSettings FromJson(string? json)
     {
@@ -93,6 +128,18 @@ public sealed class AppSettings
         }
         if (string.IsNullOrWhiteSpace(SaveFolder)) SaveFolder = null;
         if (string.IsNullOrWhiteSpace(ImageSaveFolder)) ImageSaveFolder = null;
+        GifFps = GifOptions.SnapFps(GifFps);
+        GifMaxWidth = GifOptions.ClampMaxWidth(GifMaxWidth);
+        if (Hotkeys is not null)
+        {
+            // Drop null values / blank keys from hand-edited JSON; "" (disabled) is kept.
+            var clean = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (k, v) in Hotkeys)
+            {
+                if (!string.IsNullOrWhiteSpace(k) && v is not null) clean[k.Trim()] = v.Trim();
+            }
+            Hotkeys = clean;
+        }
     }
 
     /// <summary>Effective screenshot folder (not created).</summary>

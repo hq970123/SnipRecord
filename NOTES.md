@@ -299,3 +299,39 @@ WIC GIF encoder, per-frame `/grctlext/Delay` with accumulated rounding, NETSCAPE
 `Cancel(path?)`, `PendingCount/IsBusy`, events `ExportStarted(string)`, `ProgressChanged(GifProgress)`, `ExportCompleted/ExportFailed(GifConversionResult)` (cancel → Failed, Cancelled=true).
 Result: `GifConversionResult(Mp4Path, GifPath, Cancelled, Error, Mp4Deleted)`, `Succeeded`. Adds gif to RecentStore as image; removes the deleted mp4 entry.
 Risks: GetThumbnailsAsync speed on long clips (~seconds per 100 frames); GIF palette is WIC's default (dithering quality untested).
+
+## Phase A wiring (settings + plugin)
+Compile-checked with `work/sr-check-editor/check.csproj`: C# 0 errors / 0 warnings (MakePri fails on Linux, expected). Views untouched.
+- csproj: `Microsoft.Graphics.Win2D 1.4.0` added. `App` ctor sets `DispatcherShutdownMode = OnExplicitShutdown` (property exists in
+  WinUI 2.3.0's Microsoft.WinUI.dll; WidBar.SDK exits the process itself on host shutdown). App.xaml.cs is excluded from the check
+  project, so this line was verified with a temporary probe partial class.
+- AppSettings (old JSON loads, missing → defaults): `Dictionary<string,string>? Hotkeys` (null = defaults), `GetHotkeys()`,
+  `SetHotkeys(HotkeyBindings?)` (null = reset), `HotkeysEnabled=true`, `FullScreenAllMonitors=false`, `GifFps=10` (SnapFps),
+  `GifMaxWidth=800` (ClampMaxWidth), `RecordAsGif=false`, `OpenEditorAfterCapture=false`, `GetGifOptions()` (fallback folder = image folder).
+- GifRecordingFlow: new `bool IsPending(string mp4)`.
+
+**Public SnipRecordPlugin members for the views (all UI thread):**
+```
+Task SnipAsync(SnipMode? mode = null)                 // SnipMode.FullScreen (or default mode FullScreen) → FullScreenAsync()
+Task FullScreenAsync(FullScreenTarget? target = null) // null = settings.FullScreenAllMonitors; closes flyout, 200 ms, capture, status, editor if OpenEditorAfterCapture
+Task OpenEditorAsync(string imagePath)                // never throws; errors → status line
+Task OpenEditorOnLastCaptureAsync()                   // newest existing image in Recent
+Task<GifConversionResult> ExportGifAsync(string mp4, IProgress<double>? progress = null)  // keeps MP4; never throws
+void CancelGif(string mp4);  bool IsExportingGif(string mp4);  bool IsGifBusy
+IReadOnlyDictionary<HotkeyAction,HotkeyRegistration>? HotkeyStatus;  event Action? HotkeyStatusChanged
+(existing) RecordRectangleAsync, RecordWindowAsync (toggle), StopRecordingAsync, PickColorAsync, SetRecordMicrophone,
+CopyColor, ClearStatus, Settings, Recent, IsWindowRecording, IsPaused, RecordingElapsed, RecorderWarning,
+StatusMessage, StatusIsError, event StateChanged
+```
+- Hotkeys: static owner guard — the first initialized instance owns `GlobalHotkeyService.Shared` (Start + RegisterAsync at init,
+  UnregisterAllAsync when `HotkeysEnabled` is false); on dispose ownership passes to the next live instance (re-registers with its
+  settings) or everything is unregistered. `OnSettingsDraftChanged` re-registers only when the enabled flag / bindings changed.
+  InUse/Failed registrations → error status line. HotkeyPressed: Snip (default mode) / FullScreen / RecordRectangle / RecordWindow
+  (toggle) / ColorPick / OpenEditorOnLastCapture. The settings view should edit bindings with `HotkeyRecorderBox` +
+  `settings.SetHotkeys(...)` then `SaveSettings(draft.ToJson())`, and show `plugin.HotkeyStatus[action].StatusText`
+  (SettingsView currently gets only the context — phase B needs to pass the plugin in for HotkeyStatus).
+- GIF: flow created on the UI thread (init / EnsureRecorder), attached to the WindowRecorder (after the plugin's Completed handler);
+  Snipping Tool video activations → `HandleRecordingCompleted` (converts + deletes MP4 only when `RecordAsGif`). Flow events →
+  status line ("正在转换 GIF：x 42%", "GIF 已保存：…", "已取消 GIF 导出。", error text).
+- Image activations (Snipping Tool) open the editor when `OpenEditorAfterCapture`.
+- DisposeAsync: release/hand off hotkeys, cancel GIF jobs, detach flow, dispose recorder.
