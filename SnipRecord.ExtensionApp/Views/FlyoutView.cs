@@ -9,8 +9,8 @@ using SnipRecord.ExtensionApp.Services;
 namespace SnipRecord.ExtensionApp.Views;
 
 /// <summary>
-/// Flyout: big 截图 / 录屏 / 取色 buttons with mode selectors, microphone toggle, recent captures
-/// and recent colours.
+/// Flyout: big 截图 / 录屏 / 取色 buttons with mode selectors, microphone + GIF toggles, recent captures
+/// (标注 for images, 导出 GIF for videos) and recent colours.
 /// </summary>
 public sealed class FlyoutView : Grid
 {
@@ -24,17 +24,30 @@ public sealed class FlyoutView : Grid
     private readonly Segmented _snipMode;
     private readonly Segmented _recordMode;
     private readonly ToggleSwitch _mic;
+    private readonly ToggleSwitch _gif;
     private readonly StackPanel _captures;
     private readonly TextBlock _capturesEmpty;
     private readonly StackPanel _colors;
     private readonly TextBlock _colorsEmpty;
     private bool _recordingShown;
 
-    private static readonly SnipMode[] SnipModes = { SnipMode.Rectangle, SnipMode.Window, SnipMode.FreeForm };
+    /// <summary>"导出 GIF" buttons of the rows currently rendered, by MP4 path.</summary>
+    private readonly Dictionary<string, (Button Button, TextBlock Text)> _gifButtons = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Last known export progress (0–1) per MP4, shared by every flyout instance: the flyout content is rebuilt
+    /// (and rows re-rendered on every recent change) while an export keeps running.
+    /// </summary>
+    private static readonly Dictionary<string, double> GifProgress = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly List<WeakReference<FlyoutView>> Instances = new();
+
+    private static readonly SnipMode[] SnipModes = { SnipMode.Rectangle, SnipMode.Window, SnipMode.FreeForm, SnipMode.FullScreen };
 
     public FlyoutView(SnipRecordPlugin plugin)
     {
         _plugin = plugin;
+        Instances.RemoveAll(w => !w.TryGetTarget(out _));
+        Instances.Add(new WeakReference<FlyoutView>(this));
 
         var root = new StackPanel { Spacing = 10, Padding = new Thickness(16, 14, 16, 16) };
         Children.Add(new ScrollViewer
@@ -93,32 +106,22 @@ public sealed class FlyoutView : Grid
         root.Children.Add(tiles);
 
         // ---- modes
-        _snipMode = new Segmented(new[] { "矩形", "窗口", "自由形状" },
+        _snipMode = new Segmented(new[] { "矩形", "窗口", "自由形状", "全屏" },
             Math.Max(0, Array.IndexOf(SnipModes, _plugin.Settings.DefaultSnipMode)));
         root.Children.Add(LabeledRow("截图模式", _snipMode));
 
         _recordMode = new Segmented(new[] { "矩形", "窗口" }, 1);
         root.Children.Add(LabeledRow("录屏模式", _recordMode));
 
-        _mic = new ToggleSwitch
-        {
-            IsOn = _plugin.Settings.RecordMicrophone,
-            OnContent = "",
-            OffContent = "",
-            MinWidth = 0,
-            HorizontalAlignment = HorizontalAlignment.Right,
-        };
+        _mic = SmallToggle(_plugin.Settings.RecordMicrophone);
         _mic.Toggled += (_, _) => _plugin.SetRecordMicrophone(_mic.IsOn);
-        var micLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-        micLabel.Children.Add(UiHelpers.Icon(UiHelpers.GlyphMic, 14));
-        micLabel.Children.Add(new TextBlock { Text = "窗口录屏时录制麦克风", FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
-        var micRow = new Grid();
-        micRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        micRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        micRow.Children.Add(micLabel);
-        Grid.SetColumn(_mic, 1);
-        micRow.Children.Add(_mic);
-        root.Children.Add(micRow);
+        root.Children.Add(ToggleRow(UiHelpers.GlyphMic, "窗口录屏时录制麦克风", _mic));
+
+        _gif = SmallToggle(_plugin.Settings.RecordAsGif);
+        _gif.Toggled += (_, _) => _plugin.SetRecordAsGif(_gif.IsOn);
+        var gifRow = ToggleRow(UiHelpers.GlyphVideo, "录成 GIF", _gif);
+        ToolTipService.SetToolTip(gifRow, "录屏结束后自动转换为 GIF 并删除 MP4；帧率和最大宽度在设置里调整");
+        root.Children.Add(gifRow);
 
         _status = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Visibility = Visibility.Collapsed };
         root.Children.Add(_status);
@@ -184,6 +187,7 @@ public sealed class FlyoutView : Grid
         }
 
         if (_mic.IsOn != _plugin.Settings.RecordMicrophone) _mic.IsOn = _plugin.Settings.RecordMicrophone;
+        if (_gif.IsOn != _plugin.Settings.RecordAsGif) _gif.IsOn = _plugin.Settings.RecordAsGif;
 
         // Record tile
         if (_plugin.IsWindowRecording)
@@ -213,6 +217,7 @@ public sealed class FlyoutView : Grid
     private void RenderCaptures()
     {
         _captures.Children.Clear();
+        _gifButtons.Clear();
         var items = _plugin.Recent.Items;
         _capturesEmpty.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         foreach (var item in items.Take(RecentStore.MaxCaptures))
@@ -287,16 +292,105 @@ public sealed class FlyoutView : Grid
         var folder = UiHelpers.IconButton(UiHelpers.GlyphFolder, 30, 13, "在文件夹中显示");
         folder.Click += (_, _) => UiHelpers.RevealInFolder(item.Path);
 
+        // 标注 (images) / 导出 GIF (videos)
+        Button extra;
+        if (item.IsVideo)
+        {
+            extra = GifButton(item.Path);
+        }
+        else
+        {
+            extra = UiHelpers.IconButton(UiHelpers.GlyphEdit, 30, 13, "标注");
+            extra.Click += async (_, _) => await _plugin.OpenEditorAsync(item.Path);
+        }
+
         var row = new Grid { ColumnSpacing = 2 };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.Children.Add(open);
-        Grid.SetColumn(copy, 1);
-        Grid.SetColumn(folder, 2);
+        Grid.SetColumn(extra, 1);
+        Grid.SetColumn(copy, 2);
+        Grid.SetColumn(folder, 3);
+        row.Children.Add(extra);
         row.Children.Add(copy);
         row.Children.Add(folder);
         return row;
+    }
+
+    /// <summary>
+    /// "GIF" text button: click exports (shows the percentage while running), a second click cancels.
+    /// State survives a flyout rebuild through <see cref="SnipRecordPlugin.IsExportingGif"/> + <see cref="GifProgress"/>.
+    /// </summary>
+    private Button GifButton(string mp4)
+    {
+        var text = new TextBlock { FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        var button = new Button
+        {
+            MinWidth = 36,
+            Height = 30,
+            Padding = new Thickness(4, 0, 4, 0),
+            CornerRadius = new CornerRadius(4),
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = text,
+        };
+        UiHelpers.MakeBorderless(button);
+        _gifButtons[mp4] = (button, text);
+        UpdateGifButton(mp4);
+
+        button.Click += async (_, _) =>
+        {
+            if (_plugin.IsExportingGif(mp4))
+            {
+                _plugin.CancelGif(mp4);
+                return;
+            }
+            GifProgress[mp4] = 0;
+            UpdateGifButtonEverywhere(mp4);
+            var progress = new Progress<double>(v =>
+            {
+                if (!GifProgress.ContainsKey(mp4)) return; // already finished
+                GifProgress[mp4] = v;
+                UpdateGifButtonEverywhere(mp4);
+            });
+            try
+            {
+                await _plugin.ExportGifAsync(mp4, progress); // result / errors go to the status line
+            }
+            finally
+            {
+                GifProgress.Remove(mp4);
+                UpdateGifButtonEverywhere(mp4);
+            }
+        };
+        return button;
+    }
+
+    private static void UpdateGifButtonEverywhere(string mp4)
+    {
+        foreach (var w in Instances.ToArray())
+        {
+            if (w.TryGetTarget(out var view)) view.UpdateGifButton(mp4);
+            else Instances.Remove(w);
+        }
+    }
+
+    private void UpdateGifButton(string mp4)
+    {
+        if (!_gifButtons.TryGetValue(mp4, out var b)) return;
+        var exporting = _plugin.IsExportingGif(mp4) || GifProgress.ContainsKey(mp4);
+        if (exporting)
+        {
+            var pct = GifProgress.TryGetValue(mp4, out var v) ? (int)Math.Round(Math.Clamp(v, 0, 1) * 100) : 0;
+            b.Text.Text = pct + "%";
+            ToolTipService.SetToolTip(b.Button, "正在导出 GIF，点击取消");
+        }
+        else
+        {
+            b.Text.Text = "GIF";
+            ToolTipService.SetToolTip(b.Button, "导出 GIF");
+        }
     }
 
     private void RenderColors()
@@ -326,6 +420,29 @@ public sealed class FlyoutView : Grid
             swatch.Click += (_, _) => _plugin.CopyColor(hex);
             _colors.Children.Add(swatch);
         }
+    }
+
+    private static ToggleSwitch SmallToggle(bool isOn) => new()
+    {
+        IsOn = isOn,
+        OnContent = "",
+        OffContent = "",
+        MinWidth = 0,
+        HorizontalAlignment = HorizontalAlignment.Right,
+    };
+
+    private static Grid ToggleRow(string glyph, string label, ToggleSwitch toggle)
+    {
+        var labelPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        labelPanel.Children.Add(UiHelpers.Icon(glyph, 14));
+        labelPanel.Children.Add(new TextBlock { Text = label, FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
+        var row = new Grid();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.Children.Add(labelPanel);
+        Grid.SetColumn(toggle, 1);
+        row.Children.Add(toggle);
+        return row;
     }
 
     private static UIElement LabeledRow(string label, UIElement control)

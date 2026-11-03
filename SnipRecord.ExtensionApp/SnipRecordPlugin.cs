@@ -82,13 +82,15 @@ public sealed class SnipRecordPlugin :
     public override async Task InitializeAsync(IWidgetContext context)
     {
         _settings = AppSettings.FromJson(context.SettingsJson);
-        // The flyout's microphone toggle can only persist to the shared settings.json
-        // (the flyout has no WidBar settings context), so that file wins for this one value.
+        // The flyout's microphone / GIF toggles can only persist to the shared settings.json
+        // (the flyout has no WidBar settings context), so that file wins for these values.
         try
         {
             if (File.Exists(AppSettings.SharedFilePath))
             {
-                _settings.RecordMicrophone = AppSettings.LoadShared().RecordMicrophone;
+                var shared = AppSettings.LoadShared();
+                _settings.RecordMicrophone = shared.RecordMicrophone;
+                _settings.RecordAsGif = shared.RecordAsGif;
             }
         }
         catch (Exception ex)
@@ -350,6 +352,14 @@ public sealed class SnipRecordPlugin :
     {
         if (_settings.RecordMicrophone == value) return;
         _settings.RecordMicrophone = value;
+        _settings.SaveShared();
+    }
+
+    /// <summary>Flyout "录成 GIF" toggle: kept in memory + shared settings.json (same path as the microphone toggle).</summary>
+    public void SetRecordAsGif(bool value)
+    {
+        if (_settings.RecordAsGif == value) return;
+        _settings.RecordAsGif = value;
         _settings.SaveShared();
     }
 

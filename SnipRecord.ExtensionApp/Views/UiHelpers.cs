@@ -22,6 +22,9 @@ internal static class UiHelpers
     public const string GlyphRectangle = "\uF407";
     public const string GlyphWarning = "\uE7BA";
     public const string GlyphDelete = "\uE74D";
+    public const string GlyphFullScreen = "\uE740";
+    public const string GlyphMonitors = "\uE7F4";
+    public const string GlyphEdit = "\uE70F";
 
     public static readonly Windows.UI.Color RecordRed = Argb(0xFF, 0xE8, 0x11, 0x23);
 

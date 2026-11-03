@@ -3,11 +3,13 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using SnipRecord.ExtensionApp.Services;
+using SnipRecord.ExtensionApp.Services.FullScreen;
 
 namespace SnipRecord.ExtensionApp.Views;
 
 /// <summary>
 /// Taskbar preview: three Snipping-Tool style icon buttons — 截图 / 录屏 / 取色.
+/// 截图 opens a menu (截图 / 全屏当前屏幕 / 全屏所有屏幕), 录屏 a menu (矩形 / 窗口).
 /// While a window recording runs, the record button turns red with the elapsed time and stops on click.
 /// </summary>
 public sealed class PreviewView : Grid
@@ -22,6 +24,7 @@ public sealed class PreviewView : Grid
     private readonly FontIcon _recordIcon;
     private readonly TextBlock _recordTime;
     private readonly MenuFlyout _recordMenu;
+    private readonly MenuFlyout _snipMenu;
     private bool _showingRecording;
 
     public PreviewView(SnipRecordPlugin plugin)
@@ -40,7 +43,17 @@ public sealed class PreviewView : Grid
 
         // Clicking the buttons does not open the flyout (the button handles the pointer).
         _snip = UiHelpers.IconButton(UiHelpers.GlyphCamera, ButtonSize, IconSize, "截图");
-        _snip.Click += async (_, _) => await _plugin.SnipAsync();
+        _snipMenu = new MenuFlyout { Placement = FlyoutPlacementMode.Top };
+        var snipDefault = new MenuFlyoutItem { Text = "截图", Icon = UiHelpers.Icon(UiHelpers.GlyphCamera, 14) };
+        snipDefault.Click += async (_, _) => await _plugin.SnipAsync();
+        var fullCurrent = new MenuFlyoutItem { Text = "全屏（当前屏幕）", Icon = UiHelpers.Icon(UiHelpers.GlyphFullScreen, 14) };
+        fullCurrent.Click += async (_, _) => await _plugin.FullScreenAsync(FullScreenTarget.CurrentMonitor);
+        var fullAll = new MenuFlyoutItem { Text = "全屏（所有屏幕）", Icon = UiHelpers.Icon(UiHelpers.GlyphMonitors, 14) };
+        fullAll.Click += async (_, _) => await _plugin.FullScreenAsync(FullScreenTarget.AllMonitors);
+        _snipMenu.Items.Add(snipDefault);
+        _snipMenu.Items.Add(fullCurrent);
+        _snipMenu.Items.Add(fullAll);
+        _snip.Click += (_, _) => _snipMenu.ShowAt(_snip);
 
         _recordIcon = UiHelpers.Icon(UiHelpers.GlyphVideo, IconSize);
         _recordTime = new TextBlock
